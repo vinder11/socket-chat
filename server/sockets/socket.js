@@ -1,0 +1,52 @@
+const { io } = require('../server');
+const { Usuarios } = require('../classes/usuarios');
+const { crearMensaje } = require('../utilidades/utilidades');
+const usuarios = new Usuarios();
+
+io.on('connection', (client) => {
+
+    console.log('Usuario conectado');
+
+    client.on('entrarChat', (data, callback) => { //callback es la respuesta
+
+        if (!data.nombre || !data.sala) {
+            return callback({
+                error: true,
+                mensaje: 'El nombre/sala es necesario'
+            });
+
+        }
+
+        client.join(data.sala);
+
+        usuarios.agregarPersona(client.id, data.nombre, data.sala);
+
+        client.broadcast.to(data.sala).emit('listaPersonas', usuarios.getPersonasPorSala(data.sala));
+
+        callback(usuarios.getPersonasPorSala(data.sala));
+    });
+
+
+    client.on('crearMensaje', (data) => {
+        let persona = usuarios.getPersona(client.id);
+        let mensaje = crearMensaje(persona.nombre, data.mensaje);
+        client.broadcast.to(persona.sala).emit('crearMensaje', mensaje);
+    });
+
+    client.on('disconnect', () => {
+
+        console.log('Desconectado');
+        let personaBorrada = usuarios.borrarPersona(client.id);
+
+        if (!personaBorrada) personaBorrada = { nombre: 'No existe' };
+
+        client.broadcast.to(personaBorrada.sala).emit('crearMensaje', crearMensaje('Administrador', `${personaBorrada.nombre} salió `));
+        client.broadcast.to(personaBorrada.sala).emit('listaPersonas', usuarios.getPersonasPorSala(personaBorrada.sala));
+    });
+    //mensaje privado
+    client.on('mensajePrivado', data => {
+        let persona = usuarios.getPersona(client.id);
+        console.log(client.id);
+        client.broadcast.to(data.para).emit('mensajePrivado', crearMensaje(persona.id, data.mensaje));
+    });
+});
